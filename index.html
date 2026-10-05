@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solana Pay Link Desk — payment links + QR, zero backend</title>
+<meta name="description" content="Create Solana Pay payment links and QR codes for SOL, USDC and USDG, embed them anywhere, and verify incoming payments against a public RPC. Free, open source, no backend, no custodian.">
+<link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+<header class="top">
+  <div class="brand">◎ Solana Pay <span>Link Desk</span></div>
+  <nav>
+    <a href="#create">Create</a>
+    <a href="#verify">Verify</a>
+    <a href="#saved">Saved</a>
+    <a href="https://github.com/Kshot3000/solana-pay-link-desk" rel="noopener">GitHub</a>
+  </nav>
+</header>
+
+<main>
+  <!-- Pay view: shown when the page is opened with ?recipient=... (a shared link) -->
+  <section id="payview" class="card hidden" aria-live="polite">
+    <h1 id="pv-title">Payment request</h1>
+    <p id="pv-detail" class="muted"></p>
+    <div id="pv-qr" class="qr"></div>
+    <p class="muted small">Scan with any Solana wallet (Phantom, Solflare, Backpack…) to pay.</p>
+    <p><a id="pv-open" class="btn" href="#">Open in wallet</a></p>
+    <p class="mono small" id="pv-url"></p>
+    <button id="pv-verify" class="btn ghost" type="button">Check if paid</button>
+    <p id="pv-status" class="status"></p>
+  </section>
+
+  <section class="hero">
+    <h1>Payment links for Solana. <em>No backend. No custodian.</em></h1>
+    <p>Generate a <strong>Solana Pay</strong> link + QR for SOL, USDC or USDG, drop it on any
+    page, and verify the payment on-chain from your browser. Your keys never leave your wallet —
+    this page only builds links and reads a public RPC.</p>
+  </section>
+
+  <section id="create" class="card">
+    <h2>1 · Create a payment link</h2>
+    <form id="gen-form">
+      <label>Recipient wallet address
+        <input id="f-recipient" class="mono" type="text" placeholder="e.g. 9WMsv…" autocomplete="off" spellcheck="false" required>
+      </label>
+      <div class="row">
+        <label>Amount
+          <input id="f-amount" type="text" inputmode="decimal" placeholder="25.00" autocomplete="off">
+        </label>
+        <label>Token
+          <select id="f-token">
+            <option value="USDC">USDC — USD Coin</option>
+            <option value="USDG">USDG — Global Dollar</option>
+            <option value="SOL">SOL — native</option>
+            <option value="CUSTOM">Custom SPL mint…</option>
+          </select>
+        </label>
+      </div>
+      <label id="mint-row" class="hidden">Custom SPL mint address
+        <input id="f-mint" class="mono" type="text" placeholder="Mint address" autocomplete="off" spellcheck="false">
+      </label>
+      <div class="row">
+        <label>Label (shown in the wallet)
+          <input id="f-label" type="text" placeholder="My Store" maxlength="60">
+        </label>
+        <label>Message (shown in the wallet)
+          <input id="f-message" type="text" placeholder="Thanks for your order" maxlength="120">
+        </label>
+      </div>
+      <label>Memo (optional, stored on-chain)
+        <input id="f-memo" type="text" placeholder="Order #1234" maxlength="120">
+      </label>
+      <p class="muted small">A fresh <strong>reference</strong> key is generated for every link so the payment can be
+      found and verified later — keep the link (or the reference) to check payment status.</p>
+      <button class="btn" type="submit">Generate link + QR</button>
+      <p id="gen-error" class="error"></p>
+    </form>
+
+    <div id="gen-result" class="hidden">
+      <h3>Your payment link</h3>
+      <p class="mono break" id="r-url"></p>
+      <div class="row actions">
+        <button id="r-copy" class="btn ghost" type="button">Copy link</button>
+        <button id="r-save" class="btn ghost" type="button">Save to this device</button>
+        <a id="r-page" class="btn ghost" href="#" target="_blank" rel="noopener">Open pay page</a>
+      </div>
+      <div id="r-qr" class="qr"></div>
+      <p class="small muted">Reference: <span class="mono" id="r-ref"></span></p>
+      <h3>Embed on your site</h3>
+      <pre id="r-embed" class="embed"></pre>
+      <button id="r-copy-embed" class="btn ghost" type="button">Copy embed snippet</button>
+    </div>
+  </section>
+
+  <section id="verify" class="card">
+    <h2>2 · Verify a payment</h2>
+    <p class="muted">Paste a payment link (or fill the fields) and the desk looks the payment up
+    on-chain by its reference key, then checks the recipient actually received at least the
+    requested amount of the right token.</p>
+    <form id="ver-form">
+      <label>Payment link
+        <input id="v-link" class="mono" type="text" placeholder="solana:…" autocomplete="off" spellcheck="false">
+      </label>
+      <div class="row">
+        <label>RPC endpoint
+          <input id="v-rpc" class="mono" type="text" value="https://api.mainnet-beta.solana.com" autocomplete="off" spellcheck="false">
+        </label>
+      </div>
+      <button class="btn" type="submit">Check payment</button>
+    </form>
+    <p id="ver-status" class="status"></p>
+    <p id="ver-detail" class="small muted"></p>
+  </section>
+
+  <section id="saved" class="card">
+    <h2>3 · Saved links (this device only)</h2>
+    <ul id="saved-list" class="saved"></ul>
+    <p id="saved-empty" class="muted small">Nothing saved yet. Saved links live in your browser's local storage — nowhere else.</p>
+  </section>
+
+  <section class="card">
+    <h2>How it works</h2>
+    <ol class="how">
+      <li><strong>Link.</strong> The desk builds a standard <em>Solana Pay transfer request</em> URL
+      (<span class="mono">solana:&lt;recipient&gt;?amount=…&amp;spl-token=…&amp;reference=…</span>) — the same format wallets already understand.</li>
+      <li><strong>QR.</strong> The URL is rendered as a QR code locally in your browser (vendored MIT QR library; nothing is uploaded).</li>
+      <li><strong>Verify.</strong> Verification queries a public Solana RPC for transactions carrying the link's reference key and compares pre/post balances: the recipient must have gained at least the requested amount of the requested token in a successful transaction.</li>
+    </ol>
+    <p class="muted small">No server, no sign-up, no wallet connection, no signing — the desk can never move funds.
+    Always double-check the recipient address in your wallet before paying.</p>
+  </section>
+</main>
+
+<footer>
+  <p>Built by <a href="https://x.com/kshot9000" rel="noopener">@kshot9000</a> ·
+  <a href="https://github.com/Kshot3000/solana-pay-link-desk" rel="noopener">Source (MIT)</a> ·
+  Tips (SOL/USDC/USDG): <span class="mono">9WMsvgpQQgtvfV4g2Mm7U6mHRGpVvEmFvQGAAu4aArU8</span></p>
+</footer>
+
+<script src="vendor/qrcode.js?v=1"></script>
+<script src="paylink.js?v=1"></script>
+<script src="app.js?v=1"></script>
+</body>
+</html>
