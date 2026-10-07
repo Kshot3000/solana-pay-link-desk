@@ -42,7 +42,10 @@
       var url = P.buildPayUrl({
         recipient: $('f-recipient').value.trim(),
         amount: $('f-amount').value,
-        splToken: tok.mint || undefined,
+        // null mint (native SOL) means "no token"; a custom mint is passed
+        // through verbatim — even when blank — so buildPayUrl rejects it
+        // instead of silently building a SOL link for an SPL request.
+        splToken: tok.mint === null ? undefined : tok.mint,
         decimals: tok.decimals,
         reference: reference,
         label: $('f-label').value.trim() || undefined,
@@ -228,12 +231,24 @@
       label: q.get('label'), message: q.get('message'), memo: q.get('memo')
     };
     if (!P.isValidSolanaAddress(parsed.recipient)) return;
-    var url = P.buildPayUrl({
-      recipient: parsed.recipient, amount: parsed.amount || undefined,
-      splToken: parsed.splToken || undefined, references: parsed.references,
-      label: parsed.label || undefined, message: parsed.message || undefined,
-      memo: parsed.memo || undefined
-    });
+    var url;
+    try {
+      url = P.buildPayUrl({
+        recipient: parsed.recipient, amount: parsed.amount || undefined,
+        splToken: parsed.splToken || undefined, references: parsed.references,
+        label: parsed.label || undefined, message: parsed.message || undefined,
+        memo: parsed.memo || undefined
+      });
+    } catch (e) {
+      // A shared link with unbuildable fields (bad amount, bad mint,
+      // over-precise amount…) must show an honest error, not die as an
+      // uncaught exception that leaves a blank pay view.
+      $('pv-title').textContent = 'Invalid payment link';
+      $('pv-detail').textContent = 'This shared link is not valid: ' + e.message;
+      $('payview').classList.remove('hidden');
+      window.scrollTo(0, 0);
+      return;
+    }
     var tokenName = 'SOL';
     Object.keys(P.TOKENS).forEach(function (k) {
       if (P.TOKENS[k].mint === parsed.splToken) tokenName = k;

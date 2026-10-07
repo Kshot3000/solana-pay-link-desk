@@ -67,6 +67,17 @@ test('build rejects bad inputs', () => {
   assert.throws(() => P.buildPayUrl({ recipient: KYLE, splToken: 'bad' }));
 });
 
+test('an explicit empty mint is rejected, never silently a SOL link', () => {
+  // Regression: choosing "custom SPL mint" with the field left blank used
+  // to build a native-SOL payment link — the wrong asset entirely.
+  assert.throws(() => P.buildPayUrl({ recipient: KYLE, amount: '25', splToken: '' }), /Invalid SPL token mint/);
+  // an absent mint (undefined / null) is still a plain SOL link
+  assert.ok(!P.buildPayUrl({ recipient: KYLE, amount: '25' }).includes('spl-token'));
+  assert.ok(!P.buildPayUrl({ recipient: KYLE, amount: '25', splToken: null }).includes('spl-token'));
+  // and a valid custom mint still builds an SPL link
+  assert.ok(P.buildPayUrl({ recipient: KYLE, amount: '25', splToken: USDG }).includes('spl-token=' + USDG));
+});
+
 test('parse rejects garbage', () => {
   assert.equal(P.parsePayUrl('https://example.com'), null);
   assert.equal(P.parsePayUrl('solana:bad'), null);

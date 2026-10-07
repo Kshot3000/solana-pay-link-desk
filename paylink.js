@@ -135,7 +135,11 @@ function buildPayUrl(opts) {
     }
     params.push('amount=' + encodeURIComponent(normalizeAmount(String(opts.amount))));
   }
-  if (opts.splToken) {
+  // Presence-based, not truthiness-based: an explicitly supplied mint
+  // (even an empty string, e.g. a custom-mint field left blank) must be
+  // validated — silently dropping it would build a native-SOL link when
+  // the user asked for an SPL token payment.
+  if (opts.splToken !== undefined && opts.splToken !== null) {
     if (!isValidSolanaAddress(opts.splToken)) throw new Error('Invalid SPL token mint');
     params.push('spl-token=' + encodeURIComponent(opts.splToken));
   }
