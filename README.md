@@ -17,7 +17,8 @@ Live: https://kshot3000.github.io/solana-pay-link-desk/
    link copied from your browser) and it queries a public Solana RPC for
    transactions carrying the link's reference key, then checks pre/post balances:
    the recipient must have gained at least the requested amount of the requested token
-   in a successful transaction. No wallet connection, no signing — the desk can never move funds.
+   in a successful transaction (any positive amount, for open-amount links).
+   No wallet connection, no signing — the desk can never move funds.
 
 Saved links live only in your browser's local storage.
 
@@ -47,14 +48,16 @@ Custom SPL mints are supported in the generator and the verifier (decimals resol
 node --test test/paylink.test.mjs
 ```
 
-21 tests: base58 round-trip, address/amount validation, verified mint presets,
+23 tests: base58 round-trip, address/amount validation, verified mint presets,
 build/parse round-trip (including multi-reference links, which survive intact and
 pay-page links parsing to exactly the same request as their `solana:` form),
 verify only when *every* reference is present in the transaction), precision handling
 (the generator refuses amounts a token cannot represent exactly, and the verifier can
 never report such an amount as paid),
 strict parse rejection of malformed links, an explicit-but-empty custom mint rejected
-instead of silently building a SOL link, and SOL + SPL payment detection
+instead of silently building a SOL link, open-amount links (the generator's amount is
+optional) verifying on any positive payment of the right asset — including SPL mints
+whose decimals are unknown — and SOL + SPL payment detection
 against synthetic `jsonParsed` transactions (including wrong-reference and failed-tx cases).
 
 ## Safety notes

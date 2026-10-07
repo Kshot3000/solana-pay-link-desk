@@ -293,6 +293,15 @@ function decimalToRaw(amountStr, decimals) {
   return BigInt(whole) * (10n ** BigInt(decimals)) + (frac ? BigInt(frac) : 0n);
 }
 
+/* The recipient's gain, in raw units of the requested asset (lamports
+ * for native SOL, smallest token units for an SPL mint), or null when
+ * the transaction's balances say nothing about the recipient. */
+function paymentDelta(tx, expect) {
+  if (expect.mint) return tokenDelta(tx, expect.recipient, expect.mint);
+  var lamports = lamportsDelta(tx, expect.recipient);
+  return lamports === null ? null : BigInt(lamports);
+}
+
 function txPays(tx, expect) {
   if (!tx || !tx.meta || tx.meta.err) return false;
   // Every reference key must appear in the transaction's account keys
@@ -313,18 +322,27 @@ function txPays(tx, expect) {
       if (keys.indexOf(requiredRefs[ri]) < 0) return false;
     }
   }
+  var got = paymentDelta(tx, expect);
+  if (got === null) return false;
+  // Open-amount link (the request carries no amount): any positive gain
+  // of the right asset by the recipient is a payment of it — that is
+  // what the link asks for. Such links used to be unverifiable by
+  // construction: the null amount fed decimalToRaw (null = unpaid), and
+  // the SPL branch demanded decimals merely to compare. No decimals are
+  // needed here: raw token units compare directly.
+  if (expect.amount === null || expect.amount === undefined) {
+    return got > 0n;
+  }
   if (expect.mint) {
     var decimals = expect.decimals;
     if (decimals === undefined || decimals === null) return false;
     var need = decimalToRaw(expect.amount, decimals);
     if (need === null) return false;
-    var got = tokenDelta(tx, expect.recipient, expect.mint);
-    return got !== null && got >= need;
+    return got >= need;
   }
   var needLamports = decimalToRaw(expect.amount, 9);
   if (needLamports === null) return false;
-  var gotLamports = lamportsDelta(tx, expect.recipient);
-  return gotLamports !== null && BigInt(gotLamports) >= needLamports;
+  return got >= needLamports;
 }
 
 var PayLink = {
@@ -341,6 +359,7 @@ var PayLink = {
   parsePayPageUrl: parsePayPageUrl,
   lamportsDelta: lamportsDelta,
   tokenDelta: tokenDelta,
+  paymentDelta: paymentDelta,
   decimalToRaw: decimalToRaw,
   txPays: txPays
 };

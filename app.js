@@ -185,13 +185,14 @@
       statusEl.textContent = 'This link has no reference key — payments to it cannot be looked up automatically.';
       return;
     }
-    if (!parsed.amount) {
-      statusEl.textContent = 'This link has no fixed amount — any payment amount counts; enter the link with an amount to verify a specific sum.';
-      return;
-    }
+    // No fixed amount is NOT a dead end: an open-amount link is paid by
+    // any positive transfer of the right asset to the recipient, and
+    // txPays judges exactly that — look it up like any other link.
     var decimals = decimalsFor(parsed);
     var chain = Promise.resolve(decimals);
-    if (decimals === null) {
+    // Decimals are only needed to compare a fixed amount; resolving an
+    // unknown mint's decimals via RPC would be a wasted call here.
+    if (decimals === null && parsed.amount) {
       chain = rpc(endpoint, 'getTokenSupply', [parsed.splToken]).then(function (res) {
         return res.value.decimals;
       });
@@ -224,8 +225,10 @@
           statusEl.textContent = '✅ Paid — verified on-chain.';
           detailEl.innerHTML = 'Transaction: <a class="mono" target="_blank" rel="noopener" href="https://explorer.solana.com/tx/' +
             foundSig + '">' + foundSig + '</a>';
-        } else {
+        } else if (parsed.amount) {
           statusEl.textContent = '⏳ Transactions reference this link, but none yet matches the requested amount/token for the recipient.';
+        } else {
+          statusEl.textContent = '⏳ Transactions reference this link, but none yet pays the recipient.';
         }
       });
     }).catch(function (e) {

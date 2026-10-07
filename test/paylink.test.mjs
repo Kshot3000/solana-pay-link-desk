@@ -293,6 +293,43 @@ test('pay-page parser rejects malformed links instead of dropping fields', () =>
   assert.equal(P.parsePayPageUrl(''), null);
 });
 
+test('txPays: an open-amount SOL link verifies on any positive payment', () => {
+  // Regression: the generator's amount field is optional, so open-amount
+  // links are a first-class product output — but verification punted on
+  // them (checkPayment returned early and txPays fed the null amount to
+  // decimalToRaw), so a real payment of such a link reported as unpaid.
+  const ref = P.generateReference();
+  const keys = ['Sender1111111111111111111111111111111111', KYLE, ref];
+  const paid = fakeTx({ keys, pre: [1000000000, 0, 0], post: [974000000, 25000000, 0] });
+  assert.equal(P.txPays(paid, { recipient: KYLE, amount: null, mint: null, reference: ref }), true);
+  assert.equal(P.paymentDelta(paid, { recipient: KYLE, mint: null }), 25000000n);
+  // nothing gained, or a loss (fees), is not a payment
+  const flat = fakeTx({ keys, pre: [1000000000, 0, 0], post: [1000000000, 0, 0] });
+  assert.equal(P.txPays(flat, { recipient: KYLE, amount: null, mint: null, reference: ref }), false);
+  const loss = fakeTx({ keys, pre: [0, 5000, 0], post: [0, 0, 0] });
+  assert.equal(P.txPays(loss, { recipient: KYLE, amount: null, mint: null, reference: ref }), false);
+  // the reference requirement still applies, and failed txs never count
+  assert.equal(P.txPays(paid, { recipient: KYLE, amount: null, mint: null, reference: P.generateReference() }), false);
+  const failed = fakeTx({ keys, err: { InstructionError: [0, 'x'] }, pre: [1000000000, 0, 0], post: [974000000, 25000000, 0] });
+  assert.equal(P.txPays(failed, { recipient: KYLE, amount: null, mint: null, reference: ref }), false);
+});
+
+test('txPays: an open-amount SPL link verifies without knowing the mint decimals', () => {
+  // Any positive raw-unit gain of the right mint counts; comparing raw
+  // units needs no decimals, so an unknown custom mint verifies too.
+  const ref = P.generateReference();
+  const keys = ['Sender1111111111111111111111111111111111', 'TokenAcct11111111111111111111111111111', ref];
+  const postTok = [{ accountIndex: 1, mint: USDG, owner: KYLE, uiTokenAmount: { amount: '25000000', decimals: 6 } }];
+  const tx = fakeTx({ keys, postTok });
+  assert.equal(P.txPays(tx, { recipient: KYLE, amount: null, mint: USDG, reference: ref }), true);
+  assert.equal(P.txPays(tx, { recipient: KYLE, amount: null, mint: USDG, decimals: null, reference: ref }), true);
+  // no gain of the requested mint is not a payment
+  const empty = fakeTx({ keys });
+  assert.equal(P.txPays(empty, { recipient: KYLE, amount: null, mint: USDG, reference: ref }), false);
+  // a FIXED amount still requires decimals — unknown precision must not verify
+  assert.equal(P.txPays(tx, { recipient: KYLE, amount: '25', mint: USDG, decimals: null, reference: ref }), false);
+});
+
 test('txPays: USDG payment detected via token balance delta', () => {
   const ref = P.generateReference();
   const keys = ['Sender1111111111111111111111111111111111', 'TokenAcct11111111111111111111111111111', ref];
