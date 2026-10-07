@@ -17,7 +17,9 @@ Live: https://kshot3000.github.io/solana-pay-link-desk/
    link copied from your browser) and it queries a public Solana RPC for
    transactions carrying the link's reference key, then checks pre/post balances:
    the recipient must have gained at least the requested amount of the requested token
-   in a successful transaction (any positive amount, for open-amount links).
+   in a successful transaction (any positive amount, for open-amount links). If the
+   link carries a memo, the transaction must also carry a memo instruction with
+   exactly that text — the rule the official `validateTransfer` enforces.
    No wallet connection, no signing — the desk can never move funds.
 
 Saved links live only in your browser's local storage.
@@ -48,7 +50,7 @@ Custom SPL mints are supported in the generator and the verifier (decimals resol
 node --test test/paylink.test.mjs
 ```
 
-27 tests: base58 round-trip, address/amount validation, verified mint presets,
+29 tests: base58 round-trip, address/amount validation, verified mint presets,
 build/parse round-trip (including multi-reference links, which survive intact and
 pay-page links parsing to exactly the same request as their `solana:` form),
 verify only when *every* reference is present in the transaction), precision handling
@@ -63,7 +65,10 @@ whose decimals are unknown — and SOL + SPL payment detection
 against synthetic `jsonParsed` transactions (including wrong-reference and failed-tx cases,
 and versioned v0 transactions whose recipient or reference arrives via an address
 lookup table — verification resolves the static keys plus `meta.loadedAddresses`
-in the order the RPC aligns balances to).
+in the order the RPC aligns balances to), and memo enforcement: a link carrying
+a memo verifies only against a transaction carrying a memo instruction with
+exactly that text (top-level or inner, in parsed form or as base58 UTF-8 data
+under either memo program).
 
 ## Safety notes
 

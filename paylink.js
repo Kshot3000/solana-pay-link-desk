@@ -327,6 +327,62 @@ function decimalToRaw(amountStr, decimals) {
   return BigInt(whole) * (10n ** BigInt(decimals)) + (frac ? BigInt(frac) : 0n);
 }
 
+/* ---------------- memo instructions ---------------- */
+/* The two SPL Memo program ids (v1 and v2). In a jsonParsed response
+ * both are reported as program "spl-memo" with the memo text as the
+ * parsed payload; in partially-parsed form the instruction instead
+ * carries the memo program's id and base58-encoded UTF-8 data. */
+var MEMO_PROGRAM_IDS = [
+  'Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo',
+  'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr'
+];
+
+function utf8Decode(bytes) {
+  if (typeof TextDecoder !== 'undefined') {
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(bytes)); }
+    catch (e) { return null; }
+  }
+  try { return decodeURIComponent(escape(String.fromCharCode.apply(null, bytes))); }
+  catch (e) { return null; }
+}
+
+/* The memo text carried by one instruction, or null when the
+ * instruction is not a memo instruction (or its data is undecodable). */
+function memoTextOf(ix) {
+  if (!ix || typeof ix !== 'object') return null;
+  var isMemoProgram = ix.program === 'spl-memo' ||
+    MEMO_PROGRAM_IDS.indexOf(ix.programId) >= 0;
+  if (!isMemoProgram) return null;
+  if (typeof ix.parsed === 'string') return ix.parsed;
+  if (ix.parsed && typeof ix.parsed.memo === 'string') return ix.parsed.memo;
+  if (typeof ix.data === 'string' && ix.data) {
+    var bytes = bs58Decode(ix.data);
+    if (bytes) return utf8Decode(bytes);
+  }
+  return null;
+}
+
+/* Every memo text a transaction carries, from its top-level
+ * instructions and from any inner (CPI) instructions alike. */
+function memoTexts(tx) {
+  var texts = [];
+  function scan(list) {
+    (list || []).forEach(function (ix) {
+      var t = memoTextOf(ix);
+      if (t !== null) texts.push(t);
+    });
+  }
+  var message = (tx.transaction && tx.transaction.message) || {};
+  scan(message.instructions);
+  var inner = (tx.meta && tx.meta.innerInstructions) || [];
+  inner.forEach(function (group) { scan(group && group.instructions); });
+  return texts;
+}
+
+function txHasMemo(tx, memo) {
+  return memoTexts(tx).indexOf(memo) >= 0;
+}
+
 /* The recipient's gain, in raw units of the requested asset (lamports
  * for native SOL, smallest token units for an SPL mint), or null when
  * the transaction's balances say nothing about the recipient. */
@@ -355,6 +411,20 @@ function txPays(tx, expect) {
     for (var ri = 0; ri < requiredRefs.length; ri++) {
       if (keys.indexOf(requiredRefs[ri]) < 0) return false;
     }
+  }
+  // A link that carries a memo names it as part of the payment: the
+  // Solana Pay spec has the wallet include it as a memo instruction,
+  // and the official validateTransfer rejects a transaction whose memo
+  // does not match exactly. This check used to be missing entirely —
+  // amount and reference alone verified a memo link as paid, so the
+  // "Order #1234" a merchant reconciles by could be absent or wrong.
+  // Deliberate divergence from validateTransfer's layout rule (memo
+  // immediately before the transfer): the desk validates balances
+  // rather than instruction layout, so an exact memo ANYWHERE in the
+  // transaction — top-level or inner — counts, like the reference
+  // presence check above.
+  if (expect.memo) {
+    if (!txHasMemo(tx, expect.memo)) return false;
   }
   var got = paymentDelta(tx, expect);
   if (got === null) return false;
@@ -392,6 +462,7 @@ var PayLink = {
   parsePayUrl: parsePayUrl,
   parsePayPageUrl: parsePayPageUrl,
   allAccountKeys: allAccountKeys,
+  txHasMemo: txHasMemo,
   lamportsDelta: lamportsDelta,
   tokenDelta: tokenDelta,
   paymentDelta: paymentDelta,

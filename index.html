@@ -126,7 +126,7 @@
       <li><strong>Link.</strong> The desk builds a standard <em>Solana Pay transfer request</em> URL
       (<span class="mono">solana:&lt;recipient&gt;?amount=…&amp;spl-token=…&amp;reference=…</span>) — the same format wallets already understand.</li>
       <li><strong>QR.</strong> The URL is rendered as a QR code locally in your browser (vendored MIT QR library; nothing is uploaded).</li>
-      <li><strong>Verify.</strong> Verification queries a public Solana RPC for transactions carrying the link's reference key and compares pre/post balances: the recipient must have gained at least the requested amount of the requested token in a successful transaction (any positive amount, for open-amount links).</li>
+      <li><strong>Verify.</strong> Verification queries a public Solana RPC for transactions carrying the link's reference key and compares pre/post balances: the recipient must have gained at least the requested amount of the requested token in a successful transaction (any positive amount, for open-amount links) — and if the link carries a memo, the transaction must carry a memo instruction with exactly that text.</li>
     </ol>
     <p class="muted small">No server, no sign-up, no wallet connection, no signing — the desk can never move funds.
     Always double-check the recipient address in your wallet before paying.</p>
@@ -140,7 +140,7 @@
 </footer>
 
 <script src="vendor/qrcode.js?v=1"></script>
-<script src="paylink.js?v=11"></script>
-<script src="app.js?v=11"></script>
+<script src="paylink.js?v=12"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>

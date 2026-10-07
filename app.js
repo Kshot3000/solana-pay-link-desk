@@ -209,7 +209,7 @@
       var expect = {
         recipient: parsed.recipient, amount: parsed.amount,
         mint: parsed.splToken, decimals: ctx.dec, reference: reference,
-        references: parsed.references
+        references: parsed.references, memo: parsed.memo
       };
       var seq = Promise.resolve(null);
       ctx.sigs.forEach(function (s) {
@@ -225,8 +225,12 @@
           statusEl.textContent = '✅ Paid — verified on-chain.';
           detailEl.innerHTML = 'Transaction: <a class="mono" target="_blank" rel="noopener" href="https://explorer.solana.com/tx/' +
             foundSig + '">' + foundSig + '</a>';
+        } else if (parsed.amount && parsed.memo) {
+          statusEl.textContent = '⏳ Transactions reference this link, but none yet matches the requested amount, token and memo for the recipient.';
         } else if (parsed.amount) {
           statusEl.textContent = '⏳ Transactions reference this link, but none yet matches the requested amount/token for the recipient.';
+        } else if (parsed.memo) {
+          statusEl.textContent = '⏳ Transactions reference this link, but none yet pays the recipient with the requested memo.';
         } else {
           statusEl.textContent = '⏳ Transactions reference this link, but none yet pays the recipient.';
         }

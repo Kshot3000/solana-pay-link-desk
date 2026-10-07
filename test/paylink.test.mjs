@@ -429,6 +429,67 @@ test('txPays: an SPL payment whose reference arrived via a lookup table verifies
   assert.equal(P.txPays(tx, { recipient: KYLE, amount: '25', mint: USDC, decimals: 6, reference: P.generateReference() }), false);
 });
 
+const MEMO_V1 = 'Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo';
+const MEMO_V2 = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr';
+
+test('txPays: a memo link requires a memo instruction with exactly that text', () => {
+  // Regression: txPays ignored the link's memo entirely, so a payment
+  // of the right amount carrying the reference verified as paid even
+  // with no memo instruction at all — or a different memo. The memo is
+  // part of the request (the spec has wallets include it on-chain, and
+  // the official validateTransfer enforces an exact match).
+  const ref = P.generateReference();
+  const keys = ['Sender1111111111111111111111111111111111', KYLE, ref];
+  const memoIx = (text) => ({ program: 'spl-memo', programId: MEMO_V2, parsed: text });
+  function solTx(ixs, inner) {
+    const tx = fakeTx({ keys, pre: [1000000000, 0, 0], post: [974000000, 25000000, 0] });
+    tx.transaction.message.instructions = ixs;
+    if (inner) tx.meta.innerInstructions = [{ index: 0, instructions: inner }];
+    return tx;
+  }
+  const expect = { recipient: KYLE, amount: '0.025', mint: null, reference: ref, memo: 'Order #1234' };
+  assert.equal(P.txPays(solTx([]), expect), false); // no memo instruction
+  assert.equal(P.txPays(solTx([memoIx('Order #9999')]), expect), false); // wrong memo
+  assert.equal(P.txPays(solTx([memoIx('Order #1234 ')]), expect), false); // near miss is not a match
+  assert.equal(P.txPays(solTx([memoIx('Order #1234')]), expect), true);
+  // the memo may sit among other instructions, or inside inner (CPI) ones
+  assert.equal(P.txPays(solTx([{ program: 'system', parsed: { type: 'transfer' } }, memoIx('Order #1234')]), expect), true);
+  assert.equal(P.txPays(solTx([], [memoIx('Order #1234')]), expect), true);
+  assert.equal(P.txHasMemo(solTx([memoIx('Order #1234')]), 'Order #1234'), true);
+  // a link WITHOUT a memo is unaffected — no memo instruction needed
+  assert.equal(P.txPays(solTx([]), { recipient: KYLE, amount: '0.025', mint: null, reference: ref }), true);
+  // and an SPL payment is held to the same rule
+  const postTok = [{ accountIndex: 1, mint: USDC, owner: KYLE, uiTokenAmount: { amount: '25000000', decimals: 6 } }];
+  const splTx = fakeTx({ keys: ['Sender1111111111111111111111111111111111', 'TokenAcct11111111111111111111111111111', ref], postTok });
+  splTx.transaction.message.instructions = [memoIx('Order #1234')];
+  const splExpect = { recipient: KYLE, amount: '25', mint: USDC, decimals: 6, reference: ref, memo: 'Order #1234' };
+  assert.equal(P.txPays(splTx, splExpect), true);
+  splTx.transaction.message.instructions = [];
+  assert.equal(P.txPays(splTx, splExpect), false);
+});
+
+test('txPays: a memo in unparsed (programId + base58 data) form matches', () => {
+  // jsonParsed leaves some instructions partially parsed: programId and
+  // base58 data instead of program/parsed. The memo bytes are UTF-8 —
+  // including non-ASCII text — and both memo program versions count.
+  const ref = P.generateReference();
+  const keys = ['Sender1111111111111111111111111111111111', KYLE, ref];
+  const text = 'Order #1234 ✓';
+  const data = P.bs58Encode(Array.from(new TextEncoder().encode(text)));
+  function txWith(programId, ixData) {
+    const tx = fakeTx({ keys, pre: [1000000000, 0, 0], post: [974000000, 25000000, 0] });
+    tx.transaction.message.instructions = [{ programId, accounts: [], data: ixData }];
+    return tx;
+  }
+  const expect = { recipient: KYLE, amount: '0.025', mint: null, reference: ref, memo: text };
+  assert.equal(P.txPays(txWith(MEMO_V2, data), expect), true);
+  assert.equal(P.txPays(txWith(MEMO_V1, data), expect), true);
+  // the same bytes under a different program are not a memo
+  assert.equal(P.txPays(txWith('11111111111111111111111111111111', data), expect), false);
+  // undecodable data is not a memo either
+  assert.equal(P.txPays(txWith(MEMO_V2, '!!!not-base58!!!'), expect), false);
+});
+
 test('txPays: USDG payment detected via token balance delta', () => {
   const ref = P.generateReference();
   const keys = ['Sender1111111111111111111111111111111111', 'TokenAcct11111111111111111111111111111', ref];
