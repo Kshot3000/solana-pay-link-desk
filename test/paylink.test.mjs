@@ -14,6 +14,23 @@ test('base58 round-trips a real address', () => {
   assert.equal(P.bs58Encode(bytes), KYLE);
 });
 
+test('base58 round-trips the all-zero (System Program) address', () => {
+  // The all-zero 32-byte address is the System Program — the most famous
+  // address on Solana. Encoding must emit exactly one '1' per zero byte;
+  // an extra '1' makes a 33-char string that decodes to 33 bytes and is
+  // rejected as an address, so encode/decode did not round-trip.
+  const zero32 = new Array(32).fill(0);
+  const SYS = '11111111111111111111111111111111';
+  assert.equal(SYS.length, 32);
+  assert.equal(P.bs58Encode(zero32), SYS);
+  assert.deepEqual(P.bs58Decode(SYS), zero32);
+  assert.equal(P.isValidSolanaAddress(SYS), true);
+  // shorter all-zero payloads follow the same rule
+  assert.equal(P.bs58Encode([0]), '1');
+  assert.equal(P.bs58Encode([0, 0, 0]), '111');
+  assert.deepEqual(P.bs58Decode('1'), [0]);
+});
+
 test('address validation', () => {
   assert.equal(P.isValidSolanaAddress(KYLE), true);
   assert.equal(P.isValidSolanaAddress(USDC), true);

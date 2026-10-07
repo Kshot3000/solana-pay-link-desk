@@ -28,7 +28,14 @@ function bs58Encode(bytes) {
   }
   var out = '';
   for (var z = 0; z < zeros; z++) out += '1';
-  for (var d = digits.length - 1; d >= 0; d--) out += B58_ALPHABET[digits[d]];
+  // The digits accumulator starts at [0] and still holds exactly that when
+  // the payload is ALL zero bytes (the digit loop never runs) — emitting
+  // it would add a spurious extra '1' (the System Program address came
+  // out as 33 ones instead of 32 and no longer round-tripped). A zero
+  // value has no digits of its own; the leading '1's are the encoding.
+  if (bytes.length > zeros) {
+    for (var d = digits.length - 1; d >= 0; d--) out += B58_ALPHABET[digits[d]];
+  }
   return out;
 }
 
