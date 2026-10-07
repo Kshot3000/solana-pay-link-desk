@@ -310,7 +310,14 @@
     qrInto($('pv-qr'), url);
     $('payview').classList.remove('hidden');
     $('pv-verify').addEventListener('click', function () {
-      checkPayment(P.parsePayUrl(url), 'https://api.mainnet-beta.solana.com', $('pv-status'), $('pv-status'));
+      // Status and detail must be DIFFERENT elements: checkPayment sets
+      // the status text and then clears/writes the detail element, so
+      // passing pv-status for both cleared the "Checking on-chain…"
+      // message the instant the lookup started and overwrote the
+      // "Paid" confirmation with the transaction link. (pv-detail
+      // cannot serve as the detail element either — it holds the
+      // payment description.)
+      checkPayment(P.parsePayUrl(url), 'https://api.mainnet-beta.solana.com', $('pv-status'), $('pv-ver-detail'));
     });
     window.scrollTo(0, 0);
   })();
