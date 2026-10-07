@@ -100,6 +100,51 @@ test('txPays: SOL payment detected via balance delta', () => {
   assert.equal(P.txPays(failed, { recipient: KYLE, amount: '0.025', mint: null, reference: ref }), false);
 });
 
+test('build rejects amounts too precise for the token', () => {
+  // USDC has 6 decimals: a 7th fractional digit can never be paid exactly
+  assert.throws(() => P.buildPayUrl({ recipient: KYLE, amount: '1.0000001', splToken: USDC }), /too many decimal places/);
+  // SOL has 9 decimals
+  assert.throws(() => P.buildPayUrl({ recipient: KYLE, amount: '0.0000000001' }), /too many decimal places/);
+  // an explicit decimals override is honoured for unknown mints
+  assert.throws(() => P.buildPayUrl({ recipient: KYLE, amount: '1.001', splToken: USDC, decimals: 2 }), /too many decimal places/);
+  // trailing zeros do not count against precision: 1.5000000 USDC is exactly 1.5
+  const ok = P.buildPayUrl({ recipient: KYLE, amount: '1.5000000', splToken: USDC });
+  assert.ok(ok.includes('amount=1.5'));
+  // exactly at the limit is fine
+  assert.ok(P.buildPayUrl({ recipient: KYLE, amount: '0.000001', splToken: USDC }).includes('amount=0.000001'));
+  assert.equal(P.knownDecimals(null), 9);
+  assert.equal(P.knownDecimals(USDC), 6);
+  assert.equal(P.knownDecimals(KYLE), undefined); // a wallet address is not a known mint
+});
+
+test('parse rejects malformed encodings and invalid field values', () => {
+  // malformed percent-encoding must return null, not throw URIError
+  assert.equal(P.parsePayUrl('solana:' + KYLE + '?label=%zz'), null);
+  assert.equal(P.parsePayUrl('solana:' + KYLE + '?label=100%'), null);
+  // field values the builder would refuse are rejected here too
+  assert.equal(P.parsePayUrl('solana:' + KYLE + '?amount=abc'), null);
+  assert.equal(P.parsePayUrl('solana:' + KYLE + '?amount=-3'), null);
+  assert.equal(P.parsePayUrl('solana:' + KYLE + '?amount=0'), null);
+  assert.equal(P.parsePayUrl('solana:' + KYLE + '?spl-token=bad'), null);
+  assert.equal(P.parsePayUrl('solana:' + KYLE + '?reference=bad'), null);
+  // a well-formed link with encoded text still parses
+  const good = P.parsePayUrl('solana:' + KYLE + '?amount=2.5&label=My%20Store');
+  assert.equal(good.amount, '2.5');
+  assert.equal(good.label, 'My Store');
+});
+
+test('decimalToRaw returns null (never throws) on non-decimal input', () => {
+  assert.equal(P.decimalToRaw('abc', 6), null);
+  assert.equal(P.decimalToRaw('', 6), null);
+  assert.equal(P.decimalToRaw('1.2.3', 6), null);
+  const tx = fakeTx({ keys: [KYLE], pre: [0], post: [0] });
+  assert.equal(P.txPays(tx, { recipient: KYLE, amount: 'abc', mint: null }), false);
+  // a too-precise SOL amount must never verify — not even when the
+  // recipient gained funds (null raw amount compared as 0 before the fix)
+  const rich = fakeTx({ keys: [KYLE], pre: [0], post: [5000000000] });
+  assert.equal(P.txPays(rich, { recipient: KYLE, amount: '0.0000000001', mint: null }), false);
+});
+
 test('txPays: USDG payment detected via token balance delta', () => {
   const ref = P.generateReference();
   const keys = ['Sender1111111111111111111111111111111111', 'TokenAcct11111111111111111111111111111', ref];

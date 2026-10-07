@@ -7,7 +7,9 @@
   function tokenChoice() {
     var sel = $('f-token').value;
     if (sel === 'CUSTOM') {
-      return { mint: $('f-mint').value.trim(), decimals: 6, symbol: 'SPL' };
+      // Decimals of an arbitrary mint are unknown without an RPC lookup;
+      // do not guess — the precision check is skipped for custom mints.
+      return { mint: $('f-mint').value.trim(), decimals: null, symbol: 'SPL' };
     }
     var t = P.TOKENS[sel];
     return { mint: t.mint, decimals: t.decimals, symbol: t.symbol };
@@ -41,6 +43,7 @@
         recipient: $('f-recipient').value.trim(),
         amount: $('f-amount').value,
         splToken: tok.mint || undefined,
+        decimals: tok.decimals,
         reference: reference,
         label: $('f-label').value.trim() || undefined,
         message: $('f-message').value.trim() || undefined,
@@ -71,6 +74,7 @@
     if (parsed.references[0]) qs.set('reference', parsed.references[0]);
     if (parsed.label) qs.set('label', parsed.label);
     if (parsed.message) qs.set('message', parsed.message);
+    if (parsed.memo) qs.set('memo', parsed.memo);
     return base + '?' + qs.toString();
   }
 

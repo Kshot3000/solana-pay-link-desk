@@ -46,8 +46,10 @@ Custom SPL mints are supported in the generator and the verifier (decimals resol
 node --test test/paylink.test.mjs
 ```
 
-10 tests: base58 round-trip, address/amount validation, verified mint presets,
-build/parse round-trip, precision handling, and SOL + SPL payment detection
+13 tests: base58 round-trip, address/amount validation, verified mint presets,
+build/parse round-trip, precision handling (the generator refuses amounts a token
+cannot represent exactly, and the verifier can never report such an amount as paid),
+strict parse rejection of malformed links, and SOL + SPL payment detection
 against synthetic `jsonParsed` transactions (including wrong-reference and failed-tx cases).
 
 ## Safety notes

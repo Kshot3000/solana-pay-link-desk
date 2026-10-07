@@ -103,6 +103,18 @@ function normalizeAmount(str) {
 }
 
 /* ---------------- build / parse ---------------- */
+/* Decimals of a token this desk knows about: native SOL when there is no
+ * mint, the preset table for known mints, undefined for an unknown mint
+ * (its precision cannot be checked without an RPC lookup). */
+function knownDecimals(mint) {
+  if (!mint) return 9;
+  var syms = Object.keys(TOKENS);
+  for (var i = 0; i < syms.length; i++) {
+    if (TOKENS[syms[i]].mint === mint) return TOKENS[syms[i]].decimals;
+  }
+  return undefined;
+}
+
 function buildPayUrl(opts) {
   if (!opts || !isValidSolanaAddress(opts.recipient)) {
     throw new Error('Invalid recipient address');
@@ -110,6 +122,17 @@ function buildPayUrl(opts) {
   var params = [];
   if (opts.amount !== undefined && opts.amount !== null && String(opts.amount).trim() !== '') {
     if (!isValidAmount(String(opts.amount))) throw new Error('Invalid amount');
+    // An amount the mint cannot represent exactly (more fractional digits
+    // than the token has decimals, after trimming trailing zeros) can
+    // never be paid or verified — refuse to build an unpayable link.
+    var decimals = (opts.decimals !== undefined && opts.decimals !== null)
+      ? opts.decimals : knownDecimals(opts.splToken || null);
+    if (decimals !== undefined) {
+      var frac = (normalizeAmount(String(opts.amount)).split('.')[1] || '');
+      if (frac.length > decimals) {
+        throw new Error('Amount has too many decimal places for this token (max ' + decimals + ')');
+      }
+    }
     params.push('amount=' + encodeURIComponent(normalizeAmount(String(opts.amount))));
   }
   if (opts.splToken) {
@@ -135,14 +158,28 @@ function parsePayUrl(url) {
   if (!isValidSolanaAddress(recipient)) return null;
   var q = {};
   if (m[3]) {
-    m[3].split('&').forEach(function (pair) {
-      if (!pair) return;
-      var idx = pair.indexOf('=');
-      var k = decodeURIComponent(idx >= 0 ? pair.slice(0, idx) : pair);
-      var v = idx >= 0 ? decodeURIComponent(pair.slice(idx + 1)) : '';
-      if (k === 'reference') { (q.references = q.references || []).push(v); }
-      else q[k] = v;
-    });
+    try {
+      m[3].split('&').forEach(function (pair) {
+        if (!pair) return;
+        var idx = pair.indexOf('=');
+        var k = decodeURIComponent(idx >= 0 ? pair.slice(0, idx) : pair);
+        var v = idx >= 0 ? decodeURIComponent(pair.slice(idx + 1)) : '';
+        if (k === 'reference') { (q.references = q.references || []).push(v); }
+        else q[k] = v;
+      });
+    } catch (e) {
+      return null; // malformed percent-encoding (e.g. a truncated paste)
+    }
+  }
+  // A parsed link must be one this desk could have built: reject field
+  // values the builder would refuse, instead of passing them downstream
+  // where they surface as unrelated errors.
+  if (q.amount !== undefined && !isValidAmount(q.amount)) return null;
+  if (q['spl-token'] !== undefined && !isValidSolanaAddress(q['spl-token'])) return null;
+  if (q.references) {
+    for (var ri = 0; ri < q.references.length; ri++) {
+      if (!isValidSolanaAddress(q.references[ri])) return null;
+    }
   }
   return {
     recipient: recipient,
@@ -188,6 +225,7 @@ function tokenDelta(tx, owner, mint) {
 
 function decimalToRaw(amountStr, decimals) {
   var s = normalizeAmount(String(amountStr));
+  if (!/^(0|[1-9][0-9]*)(\.[0-9]+)?$/.test(s)) return null; // not a decimal string
   var parts = s.split('.');
   var whole = parts[0];
   var frac = (parts[1] || '');
@@ -215,6 +253,7 @@ function txPays(tx, expect) {
     return got !== null && got >= need;
   }
   var needLamports = decimalToRaw(expect.amount, 9);
+  if (needLamports === null) return false;
   var gotLamports = lamportsDelta(tx, expect.recipient);
   return gotLamports !== null && BigInt(gotLamports) >= needLamports;
 }
@@ -227,6 +266,7 @@ var PayLink = {
   TOKENS: TOKENS,
   isValidAmount: isValidAmount,
   normalizeAmount: normalizeAmount,
+  knownDecimals: knownDecimals,
   buildPayUrl: buildPayUrl,
   parsePayUrl: parsePayUrl,
   lamportsDelta: lamportsDelta,
