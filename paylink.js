@@ -172,6 +172,16 @@ function parsePayUrl(url) {
   var recipient = m[1];
   if (!isValidSolanaAddress(recipient)) return null;
   var q = {};
+  // reference is the ONLY repeatable parameter in a Solana Pay request.
+  // Every other field is single-value: a link carrying it twice is
+  // ambiguous — this parser used to keep the LAST value while the
+  // pay-page parser (URLSearchParams.get) keeps the FIRST, so the same
+  // request written as amount=1&amount=999 verified as 999 in solana:
+  // form and as 1 in pay-page form (and a duplicated spl-token flipped
+  // the asset the same way). The builder never emits duplicates, so a
+  // parsed link carrying one is not a link this desk could have built.
+  var SINGLE_VALUE = { amount: 1, 'spl-token': 1, label: 1, message: 1, memo: 1 };
+  var duplicate = false;
   if (m[3]) {
     try {
       m[3].split('&').forEach(function (pair) {
@@ -180,12 +190,16 @@ function parsePayUrl(url) {
         var k = decodeURIComponent(idx >= 0 ? pair.slice(0, idx) : pair);
         var v = idx >= 0 ? decodeURIComponent(pair.slice(idx + 1)) : '';
         if (k === 'reference') { (q.references = q.references || []).push(v); }
-        else q[k] = v;
+        else {
+          if (SINGLE_VALUE[k] && q[k] !== undefined) duplicate = true;
+          q[k] = v;
+        }
       });
     } catch (e) {
       return null; // malformed percent-encoding (e.g. a truncated paste)
     }
   }
+  if (duplicate) return null;
   // A parsed link must be one this desk could have built: reject field
   // values the builder would refuse, instead of passing them downstream
   // where they surface as unrelated errors.
@@ -223,6 +237,15 @@ function parsePayPageUrl(url) {
   if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
   var q = u.searchParams;
   if (!q.has('recipient')) return null;
+  // Same duplicate rule as parsePayUrl: reference may repeat, every
+  // other field is single-value. URLSearchParams.get() would silently
+  // keep only the first of a duplicated amount/spl-token/recipient —
+  // the opposite choice from parsePayUrl's old last-wins — so the two
+  // link forms disagreed about what was being paid. Reject instead.
+  var SINGLE_PAGE = ['recipient', 'amount', 'spl-token', 'label', 'message', 'memo'];
+  for (var si = 0; si < SINGLE_PAGE.length; si++) {
+    if (q.getAll(SINGLE_PAGE[si]).length > 1) return null;
+  }
   var amount = q.has('amount') ? q.get('amount') : null;
   // buildPayUrl treats '' as "no amount" (the generator's optional field
   // relies on that), so a present-but-empty/invalid amount is rejected

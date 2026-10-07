@@ -274,6 +274,18 @@
     };
     var url;
     try {
+      // A duplicated single-value parameter is ambiguous: get()/getAll
+      // above would silently keep one value (the first) while the
+      // solana: parser historically kept the last, so the desk's own
+      // surfaces disagreed on the amount/asset. reference is the only
+      // repeatable field — reject any other duplicate outright, the
+      // same rule parsePayUrl/parsePayPageUrl enforce.
+      var SINGLE_KEYS = ['recipient', 'amount', 'spl-token', 'label', 'message', 'memo'];
+      for (var di = 0; di < SINGLE_KEYS.length; di++) {
+        if (q.getAll(SINGLE_KEYS[di]).length > 1) {
+          throw new Error('Duplicate ' + SINGLE_KEYS[di] + ' parameter');
+        }
+      }
       // buildPayUrl treats an empty-string amount as "no amount" (the
       // generator's optional amount field relies on that), so a shared
       // link's present-but-empty/invalid amount is rejected here first —

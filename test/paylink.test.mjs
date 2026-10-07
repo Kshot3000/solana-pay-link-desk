@@ -330,6 +330,48 @@ test('txPays: an open-amount SPL link verifies without knowing the mint decimals
   assert.equal(P.txPays(tx, { recipient: KYLE, amount: '25', mint: USDG, decimals: null, reference: ref }), false);
 });
 
+test('parse rejects duplicated single-value parameters in solana: links', () => {
+  // Regression: reference is the only repeatable Solana Pay parameter,
+  // but parsePayUrl kept the LAST value of any other duplicated field
+  // while the pay-page parser keeps the FIRST — amount=1&amount=999
+  // verified as 999 in solana: form and as 1 in pay-page form, and a
+  // duplicated spl-token flipped the asset the same way. A duplicated
+  // single-value field is ambiguous and the builder never emits one,
+  // so the parser must reject the link outright (either order, and
+  // even when both copies carry the same value).
+  assert.equal(P.parsePayUrl('solana:' + KYLE + '?amount=1&amount=999'), null);
+  assert.equal(P.parsePayUrl('solana:' + KYLE + '?amount=999&amount=1'), null);
+  assert.equal(P.parsePayUrl('solana:' + KYLE + '?amount=5&amount=5'), null);
+  assert.equal(P.parsePayUrl('solana:' + KYLE + '?amount=5&spl-token=' + USDC + '&spl-token=' + USDG), null);
+  assert.equal(P.parsePayUrl('solana:' + KYLE + '?label=First&label=Second'), null);
+  assert.equal(P.parsePayUrl('solana:' + KYLE + '?message=A&message=B'), null);
+  assert.equal(P.parsePayUrl('solana:' + KYLE + '?memo=A&memo=B'), null);
+  // a percent-encoded key spelling still counts as the same field
+  assert.equal(P.parsePayUrl('solana:' + KYLE + '?amount=5&%61mount=6'), null);
+  // references may still repeat — that is the one legal repetition
+  const r1 = P.generateReference();
+  const r2 = P.generateReference();
+  const ok = P.parsePayUrl('solana:' + KYLE + '?amount=5&reference=' + r1 + '&reference=' + r2);
+  assert.deepEqual(ok.references, [r1, r2]);
+  assert.equal(ok.amount, '5');
+});
+
+test('pay-page parser rejects duplicated single-value parameters', () => {
+  // The pay-page form must apply the same rule as the solana: form —
+  // URLSearchParams.get() alone would silently keep the first value,
+  // which is exactly how the two forms came to disagree.
+  const base = 'https://example.com/?recipient=' + KYLE;
+  assert.equal(P.parsePayPageUrl(base + '&amount=1&amount=999'), null);
+  assert.equal(P.parsePayPageUrl(base + '&amount=5&spl-token=' + USDC + '&spl-token=' + USDG), null);
+  assert.equal(P.parsePayPageUrl('https://example.com/?recipient=' + KYLE + '&recipient=' + USDC + '&amount=5'), null);
+  assert.equal(P.parsePayPageUrl(base + '&label=A&label=B'), null);
+  // repeated references stay legal and intact
+  const r1 = P.generateReference();
+  const r2 = P.generateReference();
+  const ok = P.parsePayPageUrl(base + '&amount=5&reference=' + r1 + '&reference=' + r2);
+  assert.deepEqual(ok.references, [r1, r2]);
+});
+
 test('txPays: USDG payment detected via token balance delta', () => {
   const ref = P.generateReference();
   const keys = ['Sender1111111111111111111111111111111111', 'TokenAcct11111111111111111111111111111', ref];
