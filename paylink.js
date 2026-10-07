@@ -143,7 +143,11 @@ function buildPayUrl(opts) {
     if (!isValidSolanaAddress(opts.splToken)) throw new Error('Invalid SPL token mint');
     params.push('spl-token=' + encodeURIComponent(opts.splToken));
   }
-  var refs = opts.references || (opts.reference ? [opts.reference] : []);
+  // Presence-based like splToken above: an explicitly supplied reference
+  // (even an empty string) must be validated — silently dropping it would
+  // build a link whose payment can never be looked up by reference.
+  var refs = opts.references ||
+    (opts.reference !== undefined && opts.reference !== null ? [opts.reference] : []);
   refs.forEach(function (r) {
     if (!isValidSolanaAddress(r)) throw new Error('Invalid reference');
     params.push('reference=' + encodeURIComponent(r));

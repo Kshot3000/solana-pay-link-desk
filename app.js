@@ -223,19 +223,34 @@
   (function payView() {
     var q = new URLSearchParams(window.location.search);
     if (!q.get('recipient')) return;
+    // Presence-based, not truthiness-based: a parameter that is present
+    // in a shared link but empty is malformed, not absent. Dropping an
+    // empty spl-token would silently render a native-SOL request for an
+    // SPL link, and dropping an empty reference would render a request
+    // whose payment can never be looked up — pass both through verbatim
+    // so buildPayUrl rejects them into the "Invalid payment link" view.
     var parsed = {
       recipient: q.get('recipient'),
-      amount: q.get('amount'),
-      splToken: q.get('spl-token'),
-      references: q.get('reference') ? [q.get('reference')] : [],
+      amount: q.has('amount') ? q.get('amount') : null,
+      splToken: q.has('spl-token') ? q.get('spl-token') : null,
+      references: q.has('reference') ? [q.get('reference')] : [],
       label: q.get('label'), message: q.get('message'), memo: q.get('memo')
     };
     if (!P.isValidSolanaAddress(parsed.recipient)) return;
     var url;
     try {
+      // buildPayUrl treats an empty-string amount as "no amount" (the
+      // generator's optional amount field relies on that), so a shared
+      // link's present-but-empty/invalid amount is rejected here first —
+      // parsePayUrl rejects the same values in a solana: link.
+      if (parsed.amount !== null && !P.isValidAmount(parsed.amount)) {
+        throw new Error('Invalid amount');
+      }
       url = P.buildPayUrl({
-        recipient: parsed.recipient, amount: parsed.amount || undefined,
-        splToken: parsed.splToken || undefined, references: parsed.references,
+        recipient: parsed.recipient,
+        amount: parsed.amount === null ? undefined : parsed.amount,
+        splToken: parsed.splToken === null ? undefined : parsed.splToken,
+        references: parsed.references,
         label: parsed.label || undefined, message: parsed.message || undefined,
         memo: parsed.memo || undefined
       });

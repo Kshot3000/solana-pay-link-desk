@@ -78,6 +78,20 @@ test('an explicit empty mint is rejected, never silently a SOL link', () => {
   assert.ok(P.buildPayUrl({ recipient: KYLE, amount: '25', splToken: USDG }).includes('spl-token=' + USDG));
 });
 
+test('an explicit empty reference is rejected, never silently dropped', () => {
+  // Regression (shared pay view): a crafted ?reference= used to be dropped
+  // by a truthiness check, rendering a payment request whose payment could
+  // never be looked up. The builder must refuse an empty reference entry
+  // outright — the pay view passes present-but-empty values through
+  // verbatim and relies on this throw to show "Invalid payment link".
+  assert.throws(() => P.buildPayUrl({ recipient: KYLE, amount: '25', references: [''] }), /Invalid reference/);
+  assert.throws(() => P.buildPayUrl({ recipient: KYLE, amount: '25', reference: '' }), /Invalid reference/);
+  // an absent reference is still a plain (unverifiable) link
+  assert.ok(!P.buildPayUrl({ recipient: KYLE, amount: '25' }).includes('reference'));
+  const ref = P.generateReference();
+  assert.ok(P.buildPayUrl({ recipient: KYLE, amount: '25', references: [ref] }).includes('reference=' + ref));
+});
+
 test('parse rejects garbage', () => {
   assert.equal(P.parsePayUrl('https://example.com'), null);
   assert.equal(P.parsePayUrl('solana:bad'), null);
