@@ -248,13 +248,23 @@ function decimalToRaw(amountStr, decimals) {
 
 function txPays(tx, expect) {
   if (!tx || !tx.meta || tx.meta.err) return false;
-  // The reference key must appear in the transaction's account keys
-  // (Solana Pay verification requirement).
-  if (expect.reference) {
+  // Every reference key must appear in the transaction's account keys
+  // (Solana Pay verification requirement). A link may carry several
+  // references; a wallet paying it includes all of them, so a transaction
+  // carrying only some of them is not a payment of this link. Checking
+  // only the first would verify payments made for a different link that
+  // happens to share that one reference.
+  var requiredRefs = expect.references ? expect.references.slice() : [];
+  if (expect.reference && requiredRefs.indexOf(expect.reference) < 0) {
+    requiredRefs.push(expect.reference);
+  }
+  if (requiredRefs.length) {
     var keys = tx.transaction.message.accountKeys.map(function (k) {
       return typeof k === 'string' ? k : k.pubkey;
     });
-    if (keys.indexOf(expect.reference) < 0) return false;
+    for (var ri = 0; ri < requiredRefs.length; ri++) {
+      if (keys.indexOf(requiredRefs[ri]) < 0) return false;
+    }
   }
   if (expect.mint) {
     var decimals = expect.decimals;

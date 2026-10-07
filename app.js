@@ -74,7 +74,11 @@
     qs.set('recipient', parsed.recipient);
     if (parsed.amount) qs.set('amount', parsed.amount);
     if (parsed.splToken) qs.set('spl-token', parsed.splToken);
-    if (parsed.references[0]) qs.set('reference', parsed.references[0]);
+    // Carry EVERY reference: a solana: link may carry several, and
+    // dropping all but the first would turn the pay page into a
+    // different, weaker payment request whose verification no longer
+    // matches the original link.
+    parsed.references.forEach(function (r) { qs.append('reference', r); });
     if (parsed.label) qs.set('label', parsed.label);
     if (parsed.message) qs.set('message', parsed.message);
     if (parsed.memo) qs.set('memo', parsed.memo);
@@ -160,6 +164,9 @@
   function checkPayment(parsed, endpoint, statusEl, detailEl) {
     statusEl.textContent = 'Checking on-chain…';
     detailEl.textContent = '';
+    // Lookup goes by the first reference (a paying transaction carries
+    // every reference, so it is indexed under the first too), but
+    // verification below requires ALL of the link's references.
     var reference = parsed.references[0];
     if (!reference) {
       statusEl.textContent = 'This link has no reference key — payments to it cannot be looked up automatically.';
@@ -187,7 +194,8 @@
       }
       var expect = {
         recipient: parsed.recipient, amount: parsed.amount,
-        mint: parsed.splToken, decimals: ctx.dec, reference: reference
+        mint: parsed.splToken, decimals: ctx.dec, reference: reference,
+        references: parsed.references
       };
       var seq = Promise.resolve(null);
       ctx.sigs.forEach(function (s) {
@@ -238,7 +246,11 @@
       recipient: q.get('recipient'),
       amount: q.has('amount') ? q.get('amount') : null,
       splToken: q.has('spl-token') ? q.get('spl-token') : null,
-      references: q.has('reference') ? [q.get('reference')] : [],
+      // getAll, not get: a shared link may repeat ?reference=…, and every
+      // reference belongs to the payment request. get() would silently
+      // drop all but the first (and an empty later reference must reach
+      // buildPayUrl verbatim so it is rejected, not dropped).
+      references: q.has('reference') ? q.getAll('reference') : [],
       label: q.get('label'), message: q.get('message'), memo: q.get('memo')
     };
     var url;

@@ -61,6 +61,19 @@ test('build + parse round-trip', () => {
   assert.equal(parsed.memo, 'Order #7');
 });
 
+test('build + parse round-trip preserves multiple references', () => {
+  // Solana Pay allows repeated reference params; wallets include all of
+  // them in the payment transaction, so none may be lost in transit.
+  const r1 = P.generateReference();
+  const r2 = P.generateReference();
+  const url = P.buildPayUrl({ recipient: KYLE, amount: '5', references: [r1, r2] });
+  assert.equal(url.split('reference=').length - 1, 2);
+  assert.deepEqual(P.parsePayUrl(url).references, [r1, r2]);
+  // an invalid entry anywhere in the list is rejected, not dropped
+  assert.throws(() => P.buildPayUrl({ recipient: KYLE, references: [r1, 'bad'] }), /Invalid reference/);
+  assert.equal(P.parsePayUrl('solana:' + KYLE + '?reference=' + r1 + '&reference=bad'), null);
+});
+
 test('build rejects bad inputs', () => {
   assert.throws(() => P.buildPayUrl({ recipient: 'bad' }));
   assert.throws(() => P.buildPayUrl({ recipient: KYLE, amount: '-1' }));
@@ -194,6 +207,25 @@ test('txPays: payment into a second token account for the same mint counts', () 
     { accountIndex: 2, mint: USDG, owner: 'SomeoneElse1111111111111111111111111111', uiTokenAmount: { amount: '25000000', decimals: 6 } }
   ] });
   assert.equal(P.txPays(other, { recipient: KYLE, amount: '25', mint: USDG, decimals: 6, reference: ref }), false);
+});
+
+test('txPays: every reference of a multi-reference link must be present', () => {
+  // Regression: verification only checked the first reference, so a
+  // transaction carrying just that one (e.g. a payment for a different
+  // link sharing it) verified as paying a two-reference link.
+  const r1 = P.generateReference();
+  const r2 = P.generateReference();
+  const sender = 'Sender1111111111111111111111111111111111';
+  const balances = { pre: [1000000000, 0], post: [0, 5000000000] };
+  const both = fakeTx({ keys: [sender, KYLE, r1, r2], ...balances });
+  assert.equal(P.txPays(both, { recipient: KYLE, amount: '5', mint: null, references: [r1, r2] }), true);
+  const onlyFirst = fakeTx({ keys: [sender, KYLE, r1], ...balances });
+  assert.equal(P.txPays(onlyFirst, { recipient: KYLE, amount: '5', mint: null, references: [r1, r2] }), false);
+  const onlySecond = fakeTx({ keys: [sender, KYLE, r2], ...balances });
+  assert.equal(P.txPays(onlySecond, { recipient: KYLE, amount: '5', mint: null, references: [r1, r2] }), false);
+  // singular and array forms combine: both are required
+  assert.equal(P.txPays(onlyFirst, { recipient: KYLE, amount: '5', mint: null, reference: r1, references: [r2] }), false);
+  assert.equal(P.txPays(both, { recipient: KYLE, amount: '5', mint: null, reference: r1, references: [r2] }), true);
 });
 
 test('txPays: USDG payment detected via token balance delta', () => {
