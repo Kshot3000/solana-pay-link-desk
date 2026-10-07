@@ -156,6 +156,32 @@ test('decimalToRaw returns null (never throws) on non-decimal input', () => {
   assert.equal(P.txPays(rich, { recipient: KYLE, amount: '0.0000000001', mint: null }), false);
 });
 
+test('txPays: payment into a second token account for the same mint counts', () => {
+  // A wallet can own several token accounts for one mint; the payment may
+  // land in any of them. Verification must aggregate the owner's accounts,
+  // not stop at the first matching balance entry.
+  const ref = P.generateReference();
+  const keys = ['Sender1111111111111111111111111111111111', ref];
+  const preTok = [
+    { accountIndex: 1, mint: USDG, owner: KYLE, uiTokenAmount: { amount: '7000000', decimals: 6 } },
+    { accountIndex: 2, mint: USDG, owner: KYLE, uiTokenAmount: { amount: '0', decimals: 6 } }
+  ];
+  const postTok = [
+    { accountIndex: 1, mint: USDG, owner: KYLE, uiTokenAmount: { amount: '7000000', decimals: 6 } },
+    { accountIndex: 2, mint: USDG, owner: KYLE, uiTokenAmount: { amount: '25000000', decimals: 6 } }
+  ];
+  const tx = fakeTx({ keys, preTok, postTok });
+  assert.equal(P.tokenDelta(tx, KYLE, USDG), 25000000n);
+  assert.equal(P.txPays(tx, { recipient: KYLE, amount: '25', mint: USDG, decimals: 6, reference: ref }), true);
+  assert.equal(P.txPays(tx, { recipient: KYLE, amount: '26', mint: USDG, decimals: 6, reference: ref }), false);
+  // a gain in another mint or another owner's account must not count
+  const other = fakeTx({ keys, preTok, postTok: [
+    { accountIndex: 1, mint: USDC, owner: KYLE, uiTokenAmount: { amount: '32000000', decimals: 6 } },
+    { accountIndex: 2, mint: USDG, owner: 'SomeoneElse1111111111111111111111111111', uiTokenAmount: { amount: '25000000', decimals: 6 } }
+  ] });
+  assert.equal(P.txPays(other, { recipient: KYLE, amount: '25', mint: USDG, decimals: 6, reference: ref }), false);
+});
+
 test('txPays: USDG payment detected via token balance delta', () => {
   const ref = P.generateReference();
   const keys = ['Sender1111111111111111111111111111111111', 'TokenAcct11111111111111111111111111111', ref];

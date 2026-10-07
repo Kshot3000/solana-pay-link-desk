@@ -215,16 +215,20 @@ function lamportsDelta(tx, pubkey) {
 function tokenDelta(tx, owner, mint) {
   if (!tx.meta) return null;
   var pre = tx.meta.preTokenBalances || [], post = tx.meta.postTokenBalances || [];
-  function find(list) {
+  // Sum across ALL of the owner's token accounts for this mint: a wallet
+  // can hold several accounts for one mint (ATA plus legacy/program
+  // accounts), and a payment may land in any of them. Taking only the
+  // first matching entry misses payments to the others entirely.
+  function sum(list) {
+    var total = 0n;
     for (var i = 0; i < list.length; i++) {
-      if (list[i].owner === owner && list[i].mint === mint) return list[i];
+      if (list[i].owner === owner && list[i].mint === mint) {
+        total += BigInt(list[i].uiTokenAmount.amount);
+      }
     }
-    return null;
+    return total;
   }
-  var a = find(pre), b = find(post);
-  var av = a ? BigInt(a.uiTokenAmount.amount) : 0n;
-  var bv = b ? BigInt(b.uiTokenAmount.amount) : 0n;
-  return bv - av; // raw integer units (BigInt)
+  return sum(post) - sum(pre); // raw integer units (BigInt)
 }
 
 function decimalToRaw(amountStr, decimals) {
