@@ -235,8 +235,11 @@
 
   $('ver-form').addEventListener('submit', function (ev) {
     ev.preventDefault();
-    var parsed = P.parsePayUrl($('v-link').value.trim());
-    if (!parsed) { $('ver-status').textContent = 'That is not a valid Solana Pay link.'; return; }
+    var linkText = $('v-link').value.trim();
+    // Accept both link forms this desk produces: the solana: URL and the
+    // hosted pay-page URL people copy out of their browser / embed code.
+    var parsed = P.parsePayUrl(linkText) || P.parsePayPageUrl(linkText);
+    if (!parsed) { $('ver-status').textContent = 'That is not a valid Solana Pay link or pay-page link.'; return; }
     checkPayment(parsed, $('v-rpc').value.trim(), $('ver-status'), $('ver-detail'));
   });
 

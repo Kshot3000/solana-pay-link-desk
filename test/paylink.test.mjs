@@ -245,6 +245,54 @@ test('txPays: every reference of a multi-reference link must be present', () => 
   assert.equal(P.txPays(both, { recipient: KYLE, amount: '5', mint: null, reference: r1, references: [r2] }), true);
 });
 
+test('pay-page links parse to the same request as their solana: form', () => {
+  // The desk produces two link forms: the solana: URL and the hosted pay
+  // page (Open pay page / saved links / embed snippet). People copy the
+  // pay-page URL out of their browser, so the verifier must accept it —
+  // previously parsePayUrl returned null for it and Verify rejected the
+  // desk's own link as "not a valid Solana Pay link".
+  const r1 = P.generateReference();
+  const r2 = P.generateReference();
+  const solanaUrl = P.buildPayUrl({
+    recipient: KYLE, amount: '25.00', splToken: USDC,
+    references: [r1, r2], label: 'My Store', message: 'Order #7 thanks', memo: 'Order #7'
+  });
+  const qs = new URLSearchParams({
+    recipient: KYLE, amount: '25', 'spl-token': USDC, label: 'My Store', message: 'Order #7 thanks', memo: 'Order #7'
+  });
+  qs.append('reference', r1);
+  qs.append('reference', r2);
+  const pageUrl = 'https://kshot3000.github.io/solana-pay-link-desk/?' + qs.toString();
+  assert.deepEqual(P.parsePayPageUrl(pageUrl), P.parsePayUrl(solanaUrl));
+  // a plain SOL pay-page link (no spl-token) parses too
+  const solPage = P.parsePayPageUrl('https://example.com/pay?recipient=' + KYLE + '&amount=0.5&reference=' + r1);
+  assert.equal(solPage.recipient, KYLE);
+  assert.equal(solPage.amount, '0.5');
+  assert.equal(solPage.splToken, null);
+  assert.deepEqual(solPage.references, [r1]);
+});
+
+test('pay-page parser rejects malformed links instead of dropping fields', () => {
+  const ref = P.generateReference();
+  const base = 'https://example.com/?recipient=' + KYLE;
+  // no recipient at all is not a payment request
+  assert.equal(P.parsePayPageUrl('https://example.com/?amount=5'), null);
+  // invalid recipient / amount / mint / reference values the builder refuses
+  assert.equal(P.parsePayPageUrl('https://example.com/?recipient=bad&amount=5'), null);
+  assert.equal(P.parsePayPageUrl(base + '&amount=abc'), null);
+  assert.equal(P.parsePayPageUrl(base + '&amount=0'), null);
+  assert.equal(P.parsePayPageUrl(base + '&spl-token=bad'), null);
+  assert.equal(P.parsePayPageUrl(base + '&reference=bad'), null);
+  // present-but-empty fields are malformed, not absent (the pay view's rule)
+  assert.equal(P.parsePayPageUrl(base + '&amount='), null);
+  assert.equal(P.parsePayPageUrl(base + '&amount=5&spl-token='), null);
+  assert.equal(P.parsePayPageUrl(base + '&amount=5&reference=' + ref + '&reference='), null);
+  // not a pay-page URL at all
+  assert.equal(P.parsePayPageUrl('solana:' + KYLE + '?amount=5'), null);
+  assert.equal(P.parsePayPageUrl('not a url'), null);
+  assert.equal(P.parsePayPageUrl(''), null);
+});
+
 test('txPays: USDG payment detected via token balance delta', () => {
   const ref = P.generateReference();
   const keys = ['Sender1111111111111111111111111111111111', 'TokenAcct11111111111111111111111111111', ref];

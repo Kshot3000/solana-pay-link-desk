@@ -207,6 +207,46 @@ function parsePayUrl(url) {
   };
 }
 
+/* Parse a pay-page link — this desk's own hosted form of a payment
+ * request (index.html?recipient=…&amount=…&reference=…), as produced by
+ * payPageUrl for the "Open pay page" button, saved links and the embed
+ * snippet. People copy THAT URL out of their browser, so the verifier
+ * must accept it as readily as the solana: form — with the same strict
+ * rules: field values are presence-based (a present-but-empty amount,
+ * spl-token or reference is malformed, not absent) and every value must
+ * be one buildPayUrl would accept, which the rebuild below enforces.
+ * Returns the same shape as parsePayUrl, or null. */
+function parsePayPageUrl(url) {
+  if (typeof url !== 'string') return null;
+  var u;
+  try { u = new URL(url.trim()); } catch (e) { return null; }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+  var q = u.searchParams;
+  if (!q.has('recipient')) return null;
+  var amount = q.has('amount') ? q.get('amount') : null;
+  // buildPayUrl treats '' as "no amount" (the generator's optional field
+  // relies on that), so a present-but-empty/invalid amount is rejected
+  // here first — parsePayUrl rejects the same values in a solana: link.
+  if (amount !== null && !isValidAmount(amount)) return null;
+  var rebuilt;
+  try {
+    rebuilt = buildPayUrl({
+      recipient: q.get('recipient'),
+      amount: amount === null ? undefined : amount,
+      splToken: q.has('spl-token') ? q.get('spl-token') : undefined,
+      // getAll, not get: every reference belongs to the payment request;
+      // an empty later one reaches buildPayUrl and is rejected there.
+      references: q.has('reference') ? q.getAll('reference') : [],
+      label: q.get('label') || undefined,
+      message: q.get('message') || undefined,
+      memo: q.get('memo') || undefined
+    });
+  } catch (e) {
+    return null;
+  }
+  return parsePayUrl(rebuilt);
+}
+
 /* ---------------- verification math (pure, testable) ---------------- */
 /* Given a parsed transaction (jsonParsed RPC shape), decide whether it
  * pays `expect` = {recipient, amount (decimal string), mint|null}.
@@ -298,6 +338,7 @@ var PayLink = {
   knownDecimals: knownDecimals,
   buildPayUrl: buildPayUrl,
   parsePayUrl: parsePayUrl,
+  parsePayPageUrl: parsePayPageUrl,
   lamportsDelta: lamportsDelta,
   tokenDelta: tokenDelta,
   decimalToRaw: decimalToRaw,

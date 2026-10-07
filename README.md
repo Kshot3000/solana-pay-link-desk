@@ -13,7 +13,8 @@ Live: https://kshot3000.github.io/solana-pay-link-desk/
    with a fresh **reference key** per link, and renders it as a QR code in your browser.
 2. **Share / embed** — every link has a hosted *pay page* (`index.html?recipient=…&amount=…&reference=…`)
    that shows the QR and a wallet deep-link, plus a copy-paste HTML embed snippet for any site.
-3. **Verify** — paste a link back into the desk and it queries a public Solana RPC for
+3. **Verify** — paste a link back into the desk (either the `solana:` URL or the pay-page
+   link copied from your browser) and it queries a public Solana RPC for
    transactions carrying the link's reference key, then checks pre/post balances:
    the recipient must have gained at least the requested amount of the requested token
    in a successful transaction. No wallet connection, no signing — the desk can never move funds.
@@ -46,8 +47,9 @@ Custom SPL mints are supported in the generator and the verifier (decimals resol
 node --test test/paylink.test.mjs
 ```
 
-18 tests: base58 round-trip, address/amount validation, verified mint presets,
+21 tests: base58 round-trip, address/amount validation, verified mint presets,
 build/parse round-trip (including multi-reference links, which survive intact and
+pay-page links parsing to exactly the same request as their `solana:` form),
 verify only when *every* reference is present in the transaction), precision handling
 (the generator refuses amounts a token cannot represent exactly, and the verifier can
 never report such an amount as paid),
