@@ -222,7 +222,12 @@
   /* ---------- pay view (shared link landing) ---------- */
   (function payView() {
     var q = new URLSearchParams(window.location.search);
-    if (!q.get('recipient')) return;
+    // Presence-based: a shared link that carries a recipient parameter at
+    // all is a payment request — even when the value is empty or invalid.
+    // Silently rendering the homepage for a mistyped/corrupted recipient
+    // leaves the payer thinking the link did nothing; show the honest
+    // "Invalid payment link" view instead (buildPayUrl rejects it below).
+    if (!q.has('recipient')) return;
     // Presence-based, not truthiness-based: a parameter that is present
     // in a shared link but empty is malformed, not absent. Dropping an
     // empty spl-token would silently render a native-SOL request for an
@@ -236,7 +241,6 @@
       references: q.has('reference') ? [q.get('reference')] : [],
       label: q.get('label'), message: q.get('message'), memo: q.get('memo')
     };
-    if (!P.isValidSolanaAddress(parsed.recipient)) return;
     var url;
     try {
       // buildPayUrl treats an empty-string amount as "no amount" (the
@@ -255,9 +259,9 @@
         memo: parsed.memo || undefined
       });
     } catch (e) {
-      // A shared link with unbuildable fields (bad amount, bad mint,
-      // over-precise amount…) must show an honest error, not die as an
-      // uncaught exception that leaves a blank pay view.
+      // A shared link with unbuildable fields (bad recipient, bad amount,
+      // bad mint, over-precise amount…) must show an honest error, not die
+      // as an uncaught exception that leaves a blank pay view.
       $('pv-title').textContent = 'Invalid payment link';
       $('pv-detail').textContent = 'This shared link is not valid: ' + e.message;
       $('payview').classList.remove('hidden');
