@@ -275,14 +275,25 @@ function parsePayPageUrl(url) {
  * pays `expect` = {recipient, amount (decimal string), mint|null}.
  * Uses balance deltas (pre/post) rather than instruction parsing so
  * inner instructions and token-program variants are covered. */
+/* Every account a transaction touches, in the order the RPC aligns
+ * pre/postBalances (and token-balance accountIndexes) to: the message's
+ * static accountKeys first, then the addresses a v0 transaction loaded
+ * from lookup tables — writable loads first, readonly loads after —
+ * which the raw JSON response reports separately as
+ * meta.loadedAddresses. Searching only the static keys misses any
+ * account that arrived via a lookup table. */
+function allAccountKeys(tx) {
+  var keys = tx.transaction.message.accountKeys.map(function (k) {
+    return typeof k === 'string' ? k : k.pubkey;
+  });
+  var loaded = (tx.meta && tx.meta.loadedAddresses) || {};
+  return keys.concat(loaded.writable || [], loaded.readonly || []);
+}
+
 function lamportsDelta(tx, pubkey) {
-  var keys = tx.transaction.message.accountKeys;
-  var idx = -1;
-  for (var i = 0; i < keys.length; i++) {
-    var k = keys[i];
-    if ((typeof k === 'string' ? k : k.pubkey) === pubkey) { idx = i; break; }
-  }
-  if (idx < 0 || !tx.meta) return null;
+  if (!tx.meta) return null;
+  var idx = allAccountKeys(tx).indexOf(pubkey);
+  if (idx < 0) return null;
   return tx.meta.postBalances[idx] - tx.meta.preBalances[idx];
 }
 
@@ -338,9 +349,9 @@ function txPays(tx, expect) {
     requiredRefs.push(expect.reference);
   }
   if (requiredRefs.length) {
-    var keys = tx.transaction.message.accountKeys.map(function (k) {
-      return typeof k === 'string' ? k : k.pubkey;
-    });
+    // A reference may sit in the lookup-table loads rather than the
+    // static keys (v0 transactions) — it still belongs to the payment.
+    var keys = allAccountKeys(tx);
     for (var ri = 0; ri < requiredRefs.length; ri++) {
       if (keys.indexOf(requiredRefs[ri]) < 0) return false;
     }
@@ -380,6 +391,7 @@ var PayLink = {
   buildPayUrl: buildPayUrl,
   parsePayUrl: parsePayUrl,
   parsePayPageUrl: parsePayPageUrl,
+  allAccountKeys: allAccountKeys,
   lamportsDelta: lamportsDelta,
   tokenDelta: tokenDelta,
   paymentDelta: paymentDelta,

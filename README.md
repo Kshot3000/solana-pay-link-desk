@@ -48,7 +48,7 @@ Custom SPL mints are supported in the generator and the verifier (decimals resol
 node --test test/paylink.test.mjs
 ```
 
-25 tests: base58 round-trip, address/amount validation, verified mint presets,
+27 tests: base58 round-trip, address/amount validation, verified mint presets,
 build/parse round-trip (including multi-reference links, which survive intact and
 pay-page links parsing to exactly the same request as their `solana:` form),
 verify only when *every* reference is present in the transaction), precision handling
@@ -60,7 +60,10 @@ never disagree on the amount or asset), an explicit-but-empty custom mint reject
 instead of silently building a SOL link, open-amount links (the generator's amount is
 optional) verifying on any positive payment of the right asset — including SPL mints
 whose decimals are unknown — and SOL + SPL payment detection
-against synthetic `jsonParsed` transactions (including wrong-reference and failed-tx cases).
+against synthetic `jsonParsed` transactions (including wrong-reference and failed-tx cases,
+and versioned v0 transactions whose recipient or reference arrives via an address
+lookup table — verification resolves the static keys plus `meta.loadedAddresses`
+in the order the RPC aligns balances to).
 
 ## Safety notes
 

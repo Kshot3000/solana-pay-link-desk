@@ -372,6 +372,63 @@ test('pay-page parser rejects duplicated single-value parameters', () => {
   assert.deepEqual(ok.references, [r1, r2]);
 });
 
+test('txPays: a v0 payment whose recipient arrived via a lookup table verifies', () => {
+  // Regression: verification searched only the message's STATIC account
+  // keys. In a versioned (v0) transaction the recipient can be loaded
+  // from an address lookup table instead — the raw RPC JSON then lists
+  // it under meta.loadedAddresses, and pre/postBalances align to the
+  // combined order [static…, writable loads…, readonly loads…]. Such a
+  // payment verified as unpaid: lamportsDelta found no index (null) and
+  // a reference sitting in the readonly loads failed the key check.
+  const ref = P.generateReference();
+  const SENDER = 'Sender1111111111111111111111111111111111';
+  const PROG = 'Token1111111111111111111111111111111111';
+  const OTHER = 'OtherLoaded11111111111111111111111111111';
+  // combined order: 0 SENDER, 1 PROG, 2 OTHER, 3 KYLE, 4 ref
+  const tx = {
+    meta: {
+      err: null,
+      preBalances: [1000000000, 0, 500, 0, 0],
+      postBalances: [974995000, 0, 500, 25000000, 0],
+      preTokenBalances: [], postTokenBalances: [],
+      loadedAddresses: { writable: [OTHER, KYLE], readonly: [ref] }
+    },
+    transaction: { message: { accountKeys: [SENDER, PROG] } }
+  };
+  assert.deepEqual(P.allAccountKeys(tx), [SENDER, PROG, OTHER, KYLE, ref]);
+  // the balance at KYLE's COMBINED index is the payment — not the gain
+  // sitting at any other loaded address's index
+  assert.equal(P.lamportsDelta(tx, KYLE), 25000000);
+  assert.equal(P.txPays(tx, { recipient: KYLE, amount: '0.025', mint: null, reference: ref }), true);
+  assert.equal(P.txPays(tx, { recipient: KYLE, amount: '0.03', mint: null, reference: ref }), false);
+  // only the OTHER loaded account gained: the recipient gained nothing
+  const otherGain = JSON.parse(JSON.stringify(tx));
+  otherGain.meta.postBalances = [974995000, 0, 25500500, 0, 0];
+  assert.equal(P.txPays(otherGain, { recipient: KYLE, amount: '0.025', mint: null, reference: ref }), false);
+  // a legacy transaction (no loadedAddresses) is unaffected
+  const legacy = fakeTx({ keys: [SENDER, KYLE, ref], pre: [100, 0, 0], post: [0, 25000000, 0] });
+  assert.equal(P.txPays(legacy, { recipient: KYLE, amount: '0.025', mint: null, reference: ref }), true);
+});
+
+test('txPays: an SPL payment whose reference arrived via a lookup table verifies', () => {
+  // The token-delta math never used account indexes, but the reference
+  // presence check did — a v0 SPL payment carrying its reference in the
+  // readonly loads was rejected before the balances were ever read.
+  const ref = P.generateReference();
+  const SENDER = 'Sender1111111111111111111111111111111111';
+  const tx = {
+    meta: {
+      err: null, preBalances: [0], postBalances: [0],
+      preTokenBalances: [],
+      postTokenBalances: [{ accountIndex: 0, mint: USDC, owner: KYLE, uiTokenAmount: { amount: '25000000', decimals: 6 } }],
+      loadedAddresses: { writable: [], readonly: [ref] }
+    },
+    transaction: { message: { accountKeys: [SENDER] } }
+  };
+  assert.equal(P.txPays(tx, { recipient: KYLE, amount: '25', mint: USDC, decimals: 6, reference: ref }), true);
+  assert.equal(P.txPays(tx, { recipient: KYLE, amount: '25', mint: USDC, decimals: 6, reference: P.generateReference() }), false);
+});
+
 test('txPays: USDG payment detected via token balance delta', () => {
   const ref = P.generateReference();
   const keys = ['Sender1111111111111111111111111111111111', 'TokenAcct11111111111111111111111111111', ref];
