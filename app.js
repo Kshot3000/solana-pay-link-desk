@@ -112,8 +112,21 @@
 
   /* ---------- saved ---------- */
   function loadSaved() {
-    try { return JSON.parse(localStorage.getItem('spld.saved') || '[]'); }
+    var raw;
+    try { raw = JSON.parse(localStorage.getItem('spld.saved') || '[]'); }
     catch (e) { return []; }
+    if (!Array.isArray(raw)) return [];
+    // Keep only entries that could have come from the generator: an
+    // object whose url is a solana: link this desk can parse. Anything
+    // else in storage — older shapes, a hand-edited value, data written
+    // by another tool on this origin — must not reach renderSaved:
+    // payPageUrl() on an unparseable url throws, and because renderSaved
+    // runs while the page script is still initializing, that one bad
+    // entry took the verify form and the shared pay view down with it.
+    // A dropped entry could never have rendered a working link anyway.
+    return raw.filter(function (item) {
+      return !!item && typeof item.url === 'string' && !!P.parsePayUrl(item.url);
+    });
   }
   function renderSaved() {
     var list = loadSaved();
