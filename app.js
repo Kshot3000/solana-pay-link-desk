@@ -198,29 +198,56 @@
       });
     }
     chain.then(function (dec) {
-      return rpc(endpoint, 'getSignaturesForAddress', [reference, { limit: 10 }]).then(function (sigs) {
-        return { dec: dec, sigs: sigs || [] };
-      });
-    }).then(function (ctx) {
-      if (!ctx.sigs.length) {
-        statusEl.textContent = '⏳ Not paid yet — no transaction carries this reference.';
-        return null;
-      }
       var expect = {
         recipient: parsed.recipient, amount: parsed.amount,
-        mint: parsed.splToken, decimals: ctx.dec, reference: reference,
+        mint: parsed.splToken, decimals: dec, reference: reference,
         references: parsed.references, memo: parsed.memo
       };
-      var seq = Promise.resolve(null);
-      ctx.sigs.forEach(function (s) {
-        seq = seq.then(function (found) {
-          if (found) return found;
-          return rpc(endpoint, 'getTransaction', [s.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }])
-            .then(function (tx) { return (tx && P.txPays(tx, expect)) ? s.signature : null; })
-            .catch(function () { return null; });
+      // Signatures for the reference come back newest-first, in pages.
+      // A paying transaction can sit beyond the first page: every
+      // failed attempt, wrong-amount attempt or other non-paying
+      // transaction carrying the reference is returned too, and ten of
+      // those buried the real payment — the old lookup fetched a
+      // single page (limit 10, no paging) and reported the link as
+      // unpaid. The official Solana Pay findReference paginates with
+      // `before` for exactly this reason. Page until a payment
+      // matches, a short or empty page ends the history, or a bounded
+      // scan budget (100 signatures) is spent.
+      var PAGE = 10;
+      var MAX_SCANNED = 100;
+      var scanned = 0;
+      var sawAny = false;
+      function scanPage(before) {
+        var opts = { limit: PAGE };
+        if (before) opts.before = before;
+        return rpc(endpoint, 'getSignaturesForAddress', [reference, opts]).then(function (sigs) {
+          sigs = sigs || [];
+          if (!sigs.length) return null;
+          sawAny = true;
+          scanned += sigs.length;
+          var seq = Promise.resolve(null);
+          sigs.forEach(function (s) {
+            seq = seq.then(function (found) {
+              if (found) return found;
+              return rpc(endpoint, 'getTransaction', [s.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }])
+                .then(function (tx) { return (tx && P.txPays(tx, expect)) ? s.signature : null; })
+                .catch(function () { return null; });
+            });
+          });
+          return seq.then(function (found) {
+            if (found) return found;
+            if (sigs.length === PAGE && scanned < MAX_SCANNED) {
+              return scanPage(sigs[sigs.length - 1].signature);
+            }
+            return null;
+          });
         });
-      });
-      return seq.then(function (foundSig) {
+      }
+      return scanPage(null).then(function (foundSig) {
+        if (!sawAny) {
+          statusEl.textContent = '⏳ Not paid yet — no transaction carries this reference.';
+          return;
+        }
         if (foundSig) {
           statusEl.textContent = '✅ Paid — verified on-chain.';
           detailEl.innerHTML = 'Transaction: <a class="mono" target="_blank" rel="noopener" href="https://explorer.solana.com/tx/' +

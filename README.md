@@ -15,7 +15,10 @@ Live: https://kshot3000.github.io/solana-pay-link-desk/
    that shows the QR and a wallet deep-link, plus a copy-paste HTML embed snippet for any site.
 3. **Verify** — paste a link back into the desk (either the `solana:` URL or the pay-page
    link copied from your browser) and it queries a public Solana RPC for
-   transactions carrying the link's reference key, then checks pre/post balances:
+   transactions carrying the link's reference key — paging through the
+   reference's history (up to 100 signatures), because a paying transaction
+   can sit behind newer failed or wrong-amount attempts carrying the same
+   reference — then checks pre/post balances:
    the recipient must have gained at least the requested amount of the requested token
    in a successful transaction (any positive amount, for open-amount links). If the
    link carries a memo, the transaction must also carry a memo instruction with
